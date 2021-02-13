@@ -15,3 +15,23 @@ def fetch_housing_data(housing_url=HOUSING_URL, housing_path=HOUSING_PATH):
 # %%
 # fetch_housing_data()
 # %%
+import pandas as pd
+# %%
+def load_housing_data(housing_path=HOUSING_PATH):
+    csv_path = os.path.join(housing_path, "housing.csv")
+    return pd.read_csv(csv_path)
+# %%
+housing = load_housing_data()
+housing.head()
+# %%
+housing.info()
+# %%
+housing['ocean_proximity'].value_counts()
+# %%
+housing.describe()
+# %%
+%matplotlib inline
+import matplotlib.pyplot as plt
+housing.hist(bins=50, figsize=(20,15))
+plt.show()
+# %%
