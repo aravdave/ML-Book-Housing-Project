@@ -108,7 +108,54 @@ lin_rmse = np.sqrt(lin_mse)
 from sklearn.tree import DecisionTreeRegressor
 
 tree_reg = DecisionTreeRegressor()
-tree_reg.fit(housing_prepared, housing_labels)
-housing_predictions = tree_reg.predict(housing_prepared)
-tree_rmse = np.sqrt(mean_squared_error(housing_labels, housing_predictions))
+# tree_reg.fit(housing_prepared, housing_labels)
+# housing_predictions = tree_reg.predict(housing_prepared)
+# tree_rmse = np.sqrt(mean_squared_error(housing_labels, housing_predictions))
+# %%
+from sklearn.model_selection import cross_val_score
+scores = cross_val_score(tree_reg, housing_prepared, housing_labels,
+                        scoring = "neg_mean_squared_error", cv=10)
+# We use a neg mean squared error because cross_value_score expects a uti
+# -lity function. Greater is better.
+tree_rmse_scores = np.sqrt(-scores)
+# %%
+def display_scores(scores):
+    print('Scores:', scores)
+    print('Mean', scores.mean())
+    print("Standard Deviation", scores.std())
+# %%
+display_scores(tree_rmse_scores)
+# %%
+lin_scores = cross_val_score(lin_reg, housing_prepared, housing_labels,
+                            scoring='neg_mean_squared_error', cv=10)
+lin_rmse = np.sqrt(-lin_scores)
+display_scores(lin_rmse)
+# %%
+import joblib
+
+joblib.dump(lin_reg, 'lin_reg.pkl')
+joblib.dump(tree_reg, 'tree_reg.pkl')
+# lin_reg_loaded = joblib.load('lin_reg.pkl)
+# %%
+from sklearn.model_selection import GridSearchCV
+from sklearn.ensemble import RandomForestRegressor
+
+param_grid = [
+    {'n_estimators': [3,10,30], 'max_features' : [2,4,6,8]},
+    {'bootstrap': [False], 'n_estimators':[3,10], 'max_features':[2,3,4]},
+]
+
+forest_reg = RandomForestRegressor()
+grid_search = GridSearchCV(forest_reg, param_grid, cv=5,
+                           scoring='neg_mean_squared_error',
+                           return_train_score = True)
+
+grid_search.fit(housing_prepared, housing_labels)
+# %%
+print(grid_search.best_params_)
+print(grid_search.best_estimator_)
+# %%
+cvres = grid_search.cv_results_
+for mean_score, params in zip(cvres['mean_test_score'], cvres['params']):
+    print(np.sqrt(-mean_score), params)
 # %%
