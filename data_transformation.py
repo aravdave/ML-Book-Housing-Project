@@ -88,6 +88,22 @@ full_pipeline = ColumnTransformer([
 ])
 
 housing_prepared = full_pipeline.fit_transform(housing)
+
+# %%
+def indices_of_top_k(arr, k):
+    return np.sort(np.argpartition(np.array(arr), -k)[-k:])
+
+class TopFeatureSelector(BaseEstimator, TransformerMixin):
+    def __init__(self, feature_importances, k):
+        self.feature_importances = feature_importances
+        self.k = k
+    def fit(self, X, y=None):
+        self.feature_indices_ = indices_of_top_k(self.feature_importances, self.k)
+        return self
+    def transform(self, X):
+        return X[:, self.feature_indices_]
+    
+# %%
 # %%
 from sklearn.linear_model import LinearRegression
 
@@ -137,35 +153,57 @@ joblib.dump(lin_reg, 'lin_reg.pkl')
 joblib.dump(tree_reg, 'tree_reg.pkl')
 # lin_reg_loaded = joblib.load('lin_reg.pkl)
 # %%
-# from sklearn.model_selection import GridSearchCV
-# from sklearn.ensemble import RandomForestRegressor
-
-# param_grid = [
-#     {'n_estimators': [3,10,30], 'max_features' : [2,4,6,8]},
-#     {'bootstrap': [False], 'n_estimators':[3,10], 'max_features':[2,3,4]},
-# ]
-
-# forest_reg = RandomForestRegressor()
-# grid_search = GridSearchCV(forest_reg, param_grid, cv=5,
-#                            scoring='neg_mean_squared_error',
-#                            return_train_score = True)
-
-# grid_search.fit(housing_prepared, housing_labels)
-
-# %%
 from sklearn.model_selection import GridSearchCV
-from sklearn.svm import SVR
+from sklearn.ensemble import RandomForestRegressor
 
 param_grid = [
-    {'kernel': ['linear'], 'C': [2,4,16,(16**2)]},
-    {'kernel': ['rbf'], 'C': [2,4,16,(16**2)], 'gamma': [2,4,16,(16**2)]}
+    {'n_estimators': [3,10,30], 'max_features' : [2,4,6,8]},
+    {'bootstrap': [False], 'n_estimators':[3,10], 'max_features':[2,3,4]},
 ]
 
-svm_reg = SVR()
-grid_search = GridSearchCV(svm_reg, param_grid, cv=5,
+forest_reg = RandomForestRegressor()
+grid_search = GridSearchCV(forest_reg, param_grid, cv=5,
                            scoring='neg_mean_squared_error',
-                           return_train_score=True)
+                           return_train_score = True)
+
 grid_search.fit(housing_prepared, housing_labels)
+
+#%%
+# from sklearn.model_selection import GridSearchCV
+# from sklearn.svm import SVR
+
+# param_grid = [
+#     {'kernel': ['linear'], 'C': [2,4,16,(16**2)]},
+#     {'kernel': ['rbf'], 'C': [2,4,16,(16**2)], 'gamma': [2,4,16,(16**2)]}
+# ]
+
+# svm_reg = SVR()
+# grid_search = GridSearchCV(svm_reg, param_grid, cv=5,
+#                            scoring='neg_mean_squared_error',
+#                            return_train_score=True, verbose=2)
+# grid_search.fit(housing_prepared, housing_labels)
+#%%
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.svm import SVR
+from scipy.stats import expon, reciprocal
+
+param_distribs = {
+        'kernel': ['linear', 'rbf'],
+        'C': reciprocal(20, 200000),
+        'gamma': expon(scale=1.0),
+    }
+
+svm_reg = SVR()
+rnd_search = RandomizedSearchCV(svm_reg, param_distribs,
+                            n_iter=50, cv=5, scoring='neg_mean_squared_error',
+                            verbose=2, random_state=42)
+rnd_search.fit(housing_prepared, housing_labels)
+
+# %%
+negative_mse = rnd_search.best_score_
+rmse = np.sqrt(-negative_mse)
+print(rmse)
+
 # %%
 print(grid_search.best_params_)
 print(grid_search.best_estimator_)
@@ -199,4 +237,49 @@ confidence = 0.95
 squared_errors = (final_predictions-y_test) ** 2
 np.sqrt(stats.t.interval(confidence, len(squared_errors) - 1, loc=squared_errors.mean(),
         scale = stats.sem(squared_errors)))
+# %%
+k = 5
+top_k_feature_indices = indices_of_top_k(feature_importances, k)
+print(top_k_feature_indices)
+print(np.array(attributes)[top_k_feature_indices])
+
+print(sorted(zip(feature_importances, attributes), reverse=True)[:k])
+
+#%%
+preparation_and_feature_selection_pipeline = Pipeline([
+    ('preparation', full_pipeline),
+    ('feature_selection', TopFeatureSelector(feature_importances, k))
+])
+
+housing_prepared_top_k_features = preparation_and_feature_selection_pipeline.fit_transform(housing)
+print(housing_prepared_top_k_features[0:3])
+print(housing_prepared[0:3, top_k_feature_indices])
+# %%
+prepare_select_and_predict_pipeline = Pipeline([
+    ('preparation', full_pipeline),
+    ('feature_selection', TopFeatureSelector(feature_importances, k)),
+    ('svm_reg', SVR(**rnd_search.best_params_))
+])
+# %%
+prepare_select_and_predict_pipeline.fit(housing, housing_labels)
+# %%
+some_data = housing.iloc[:4]
+some_labels = housing_labels.iloc[:4]
+
+print('Predictions:\t', prepare_select_and_predict_pipeline.predict(some_data))
+print('Labels:\t\t', list(some_labels))
+# %%
+param_grid = [{
+    'preparation__num__imputer__strategy': ['mean', 'median', 'most_frequent'],
+    'feature_selection__k': list(range(1, len(feature_importances) + 1))
+}]
+
+from sklearn.model_selection import GridSearchCV
+grid_search_prep = GridSearchCV(prepare_select_and_predict_pipeline, param_grid, cv=5,
+                                scoring='neg_mean_squared_error', verbose=2)
+grid_search_prep.fit(housing, housing_labels)
+# %%
+grid_search_prep.best_params_
+# {'feature_selection__k': 15,
+# 'preparation__num__imputer__strategy': 'most_frequent'}
 # %%
